@@ -141,10 +141,13 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     
     try {
       if (isLogin) {
@@ -168,8 +171,25 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         }
         onAuthSuccess(data.user);
       }
-    } catch (error: any) {
-      alert(error.message);
+    } catch (err: any) {
+      setError(err.message === 'Invalid login credentials' ? 'خطأ في البريد الإلكتروني أو كلمة المرور' : err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email: 'wahablila31000@gmail.com', 
+        password: '123456' 
+      });
+      if (error) throw error;
+      onAuthSuccess(data.user);
+    } catch (err: any) {
+      setError('فشل تسجيل الدخول التجريبي. يرجى المحاولة يدوياً.');
     } finally {
       setLoading(false);
     }
@@ -190,6 +210,17 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         <p className="text-slate-500 text-center mb-10 text-lg">
           {isLogin ? 'سجل دخولك لمتابعة دروسك' : 'ابدأ مسيرتك التعليمية اليوم'}
         </p>
+
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl text-center font-bold text-sm border border-red-100 flex items-center justify-center gap-2"
+          >
+            <AlertCircle className="w-5 h-5" />
+            {error}
+          </motion.div>
+        )}
 
         {!isLogin && (
           <div className="flex gap-2 mb-8 p-1.5 bg-slate-100 rounded-2xl">
@@ -237,14 +268,23 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <input 
-            type="password" 
-            placeholder="كلمة المرور" 
-            className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none focus:ring-2 focus:ring-emerald-500 transition-all"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="relative">
+            <input 
+              type={showPassword ? "text" : "password"} 
+              placeholder="كلمة المرور" 
+              className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <button 
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
+            >
+              {showPassword ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+          </div>
           <button 
             type="submit" 
             disabled={loading}
@@ -252,6 +292,16 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
           >
             {loading ? 'جاري التحميل...' : (isLogin ? 'دخول' : 'إنشاء حساب')}
           </button>
+          
+          {isLogin && (
+            <button 
+              type="button"
+              onClick={handleDemoLogin}
+              className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold text-lg hover:bg-slate-200 transition-all mt-2"
+            >
+              تجربة حساب تجريبي
+            </button>
+          )}
         </form>
 
         <div className="mt-10 text-center">
@@ -304,8 +354,21 @@ export default function App() {
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isMicApproved, setIsMicApproved] = useState(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Verify Supabase Connection
+    const checkConnection = async () => {
+      try {
+        const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+        if (error) throw error;
+      } catch (err: any) {
+        console.error('Supabase connection error:', err);
+        setSupabaseError('فشل الاتصال بقاعدة البيانات. يرجى التحقق من الإعدادات.');
+      }
+    };
+    checkConnection();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user);
@@ -556,6 +619,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24" dir="rtl">
+      {/* Supabase Connection Error Warning */}
+      {supabaseError && (
+        <div className="bg-red-600 text-white p-3 text-center text-sm font-bold sticky top-0 z-50 flex items-center justify-center gap-2">
+          <AlertCircle className="w-5 h-5" />
+          {supabaseError}
+        </div>
+      )}
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
