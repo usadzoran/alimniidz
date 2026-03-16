@@ -18,7 +18,42 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { db, auth } from './firebase';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  limit
+} from 'firebase/firestore';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+
+// --- Helper for Activity Logging ---
+const logActivity = async (action: string, details: string = '') => {
+  if (!auth.currentUser) return;
+  try {
+    await addDoc(collection(db, 'activity_logs'), {
+      user_id: auth.currentUser.uid,
+      user_name: auth.currentUser.email,
+      action,
+      details,
+      timestamp: serverTimestamp()
+    });
+  } catch (e) {
+    console.error("Error logging activity:", e);
+  }
+};
 import { UserProfile, UserRole } from './types';
 
 // --- Components ---
@@ -184,37 +219,33 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
     
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        
-        // Special case for admin: if login fails but it's the admin email, try to sign up
-        if (error && email === 'wahablila31000@gmail.com') {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
-          if (signUpError) throw signUpError;
-          onAuthSuccess(signUpData.user);
-          return;
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          onAuthSuccess(auth.currentUser);
+        } catch (error: any) {
+          // Special case for admin: if login fails but it's the admin email, try to sign up
+          if (email === 'wahablila31000@gmail.com') {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            onAuthSuccess(userCredential.user);
+          } else {
+            throw error;
+          }
         }
-        
-        if (error) throw error;
-        onAuthSuccess(data.user);
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
         
-        // Create user profile
-        if (data.user) {
-          const isMainAdmin = email === 'wahablila31000@gmail.com';
-          const { error: profileError } = await supabase
-            .from('users')
-            .insert({
-              auth_id: data.user.id,
-              first_name: isMainAdmin ? 'المدير' : firstName,
-              last_name: isMainAdmin ? 'العام' : lastName,
-              role: isMainAdmin ? 'admin' : role,
-              account_status: isMainAdmin ? 'active' : (role === 'teacher' ? 'pending' : 'active')
-            });
-          if (profileError) throw profileError;
-        }
-        onAuthSuccess(data.user);
+        // Create user profile in Firestore
+        const isMainAdmin = email === 'wahablila31000@gmail.com';
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
+          auth_id: firebaseUser.uid,
+          first_name: isMainAdmin ? 'المدير' : firstName,
+          last_name: isMainAdmin ? 'العام' : lastName,
+          role: isMainAdmin ? 'admin' : role,
+          account_status: isMainAdmin ? 'active' : (role === 'teacher' ? 'pending' : 'active')
+        });
+        
+        onAuthSuccess(firebaseUser);
       }
     } catch (error: any) {
       alert(error.message);
@@ -373,92 +404,90 @@ export default function App() {
   const [posts, setPosts] = useState<any[]>([]);
   const [liveClasses, setLiveClasses] = useState<any[]>([]);
 
-  useEffect(() => {
-    const checkUser = async () => {
-      // Handle direct admin access link
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('access') === 'admin_wahab') {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'wahablila31000@gmail.com',
-          password: 'vampirewahab31'
-        });
-        if (!error && data.user) {
-          setUser(data.user);
-          await fetchProfile(data.user.id, data.user.email);
-          await fetchData();
-          setShowAdmin(true);
-          // Clean up URL
-          window.history.replaceState({}, document.title, window.location.pathname);
-          return;
-        }
-      }
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        await fetchProfile(session.user.id, session.user.email);
-        await fetchData();
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        await fetchProfile(firebaseUser.uid, firebaseUser.email || undefined);
+        fetchData();
+        logActivity('دخول', 'قام المستخدم بتسجيل الدخول');
       } else {
+        setUser(null);
+        setProfile(null);
         setLoading(false);
       }
-    };
-    checkUser();
+    });
+
+    // Handle direct admin access link
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('access') === 'admin_wahab') {
+      signInWithEmailAndPassword(auth, 'wahablila31000@gmail.com', 'vampirewahab31').then(() => {
+        setShowAdmin(true);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      });
+    }
+
+    return () => unsubscribeAuth();
   }, []);
 
-  const fetchData = async () => {
-    // Fetch Posts
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select('*, author:users(*)')
-      .order('created_at', { ascending: false });
-    if (postsData) setPosts(postsData);
+  const fetchData = () => {
+    // Real-time Posts
+    const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'));
+    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+      const postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPosts(postsData);
+    });
 
-    // Fetch Live Classes
-    const { data: liveData } = await supabase
-      .from('live_classes')
-      .select('*')
-      .eq('status', 'live');
-    if (liveData) setLiveClasses(liveData);
+    // Real-time Activity Logs (for Admin)
+    let unsubscribeLogs = () => {};
+    if (profile?.role === 'admin') {
+      const logsQuery = query(collection(db, 'activity_logs'), orderBy('timestamp', 'desc'), limit(50));
+      unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
+        const logsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setActivityLogs(logsData);
+      });
+    }
+
+    return () => {
+      unsubscribePosts();
+      unsubscribeLogs();
+    };
   };
 
   const fetchProfile = async (authId: string, userEmail?: string) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('auth_id', authId)
-      .single();
+    const docRef = doc(db, 'users', authId);
+    const docSnap = await getDoc(docRef);
     
-    if (data) {
+    if (docSnap.exists()) {
+      const data = docSnap.data() as UserProfile;
       // Force admin role for the specific email
       if (userEmail === 'wahablila31000@gmail.com' && data.role !== 'admin') {
-        const { data: updatedData } = await supabase
-          .from('users')
-          .update({ role: 'admin' })
-          .eq('auth_id', authId)
-          .select()
-          .single();
-        if (updatedData) setProfile(updatedData);
-        else setProfile(data);
+        await updateDoc(docRef, { role: 'admin' });
+        setProfile({ ...data, role: 'admin' });
       } else {
         setProfile(data);
       }
     } else if (userEmail === 'wahablila31000@gmail.com') {
-      // If profile doesn't exist for admin, create it
-      const { data: newData } = await supabase
-        .from('users')
-        .insert({
-          auth_id: authId,
-          first_name: 'المدير',
-          last_name: 'العام',
-          role: 'admin',
-          account_status: 'active'
-        })
-        .select()
-        .single();
-      if (newData) setProfile(newData);
+      const newProfile = {
+        auth_id: authId,
+        first_name: 'المدير',
+        last_name: 'العام',
+        role: 'admin' as UserRole,
+        account_status: 'active'
+      };
+      await setDoc(docRef, newProfile);
+      setProfile(newProfile as UserProfile);
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (user) {
+      logActivity('تصفح', `انتقل إلى تبويب: ${activeTab}`);
+    }
+  }, [activeTab]);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
@@ -490,22 +519,37 @@ export default function App() {
             <button onClick={() => setShowAdmin(false)} className="text-emerald-600 font-bold">العودة للتطبيق</button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-slate-500 text-sm mb-1">إجمالي الطلاب</p>
-              <h3 className="text-2xl font-bold text-slate-900">1,240</h3>
+              <h3 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-600" />
+                النشاط المباشر (Realtime)
+              </h3>
+              <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                {activityLogs.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 border-b border-slate-50 pb-3">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 mt-2 animate-pulse"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-slate-800">{log.user_name}</p>
+                      <p className="text-xs text-slate-600">{log.action}: {log.details}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString('ar-EG') : 'الآن'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {activityLogs.length === 0 && (
+                  <p className="text-center text-slate-400 py-8">لا يوجد نشاط حالياً</p>
+                )}
+              </div>
             </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-slate-500 text-sm mb-1">إجمالي الأساتذة</p>
-              <h3 className="text-2xl font-bold text-slate-900">85</h3>
-            </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <p className="text-slate-500 text-sm mb-1">طلبات معلقة</p>
-              <h3 className="text-2xl font-bold text-red-600">12</h3>
-            </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-center items-center text-center">
               <p className="text-slate-500 text-sm mb-1">الزيارات اليومية</p>
-              <h3 className="text-2xl font-bold text-emerald-600">3,500</h3>
+              <h3 className="text-4xl font-bold text-emerald-600">3,500</h3>
+              <div className="mt-4 w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 w-3/4"></div>
+              </div>
             </div>
           </div>
 
@@ -810,7 +854,7 @@ export default function App() {
                 )}
                 <button 
                   onClick={async () => {
-                    await supabase.auth.signOut();
+                    await signOut(auth);
                     setUser(null);
                     setProfile(null);
                   }}

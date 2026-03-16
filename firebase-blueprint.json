@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "User profile information and roles",
+      "type": "object",
+      "properties": {
+        "auth_id": { "type": "string", "description": "Firebase Auth UID" },
+        "first_name": { "type": "string" },
+        "last_name": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher", "admin"] },
+        "account_status": { "type": "string", "enum": ["active", "pending", "suspended"] },
+        "profile_image": { "type": "string", "format": "uri" },
+        "last_active": { "type": "string", "format": "date-time" }
+      },
+      "required": ["auth_id", "first_name", "last_name", "role"]
+    },
+    "posts": {
+      "title": "Post",
+      "description": "Educational posts or announcements",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["title", "content", "author_id", "created_at"]
+    },
+    "activity_logs": {
+      "title": "Activity Log",
+      "description": "Real-time activity tracking for admin",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "user_name": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profiles"
+    },
+    "/posts/{postId}": {
+      "schema": "posts",
+      "description": "Educational posts"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "activity_logs",
+      "description": "Real-time activity logs for admin monitoring"
+    }
+  }
+}
