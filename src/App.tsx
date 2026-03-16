@@ -1,0 +1,684 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Home, 
+  Video, 
+  MessageSquare, 
+  FileText, 
+  User, 
+  LogOut, 
+  Plus, 
+  Bell,
+  Search,
+  Menu,
+  X,
+  ChevronRight,
+  BookOpen,
+  Users,
+  CheckCircle,
+  Clock
+} from 'lucide-react';
+import { supabase } from './lib/supabase';
+import { UserProfile, UserRole } from './types';
+
+// --- Components ---
+
+const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-6 text-center"
+    >
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        className="mb-8"
+      >
+        <img 
+          src="https://picsum.photos/seed/education/800/600" 
+          alt="Education Illustration" 
+          className="w-full max-w-md rounded-2xl shadow-2xl"
+          referrerPolicy="no-referrer"
+        />
+      </motion.div>
+      
+      <motion.h1 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        className="text-6xl font-bold text-emerald-600 mb-4 font-sans"
+      >
+        علّمني
+      </motion.h1>
+      
+      <motion.p 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="text-xl text-slate-600 mb-12 max-w-sm"
+      >
+        تعلم مع أفضل الأساتذة مباشرة و بسهولة
+      </motion.p>
+
+      <div className="flex gap-4 w-full max-w-xs">
+        <button 
+          onClick={onFinish}
+          className="flex-1 bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-colors"
+        >
+          ابدأ الآن
+        </button>
+      </div>
+    </motion.div>
+  );
+};
+
+const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [role, setRole] = useState<UserRole>('student');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      if (isLogin) {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        onAuthSuccess(data.user);
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        
+        // Create user profile
+        if (data.user) {
+          const { error: profileError } = await supabase
+            .from('users')
+            .insert({
+              auth_id: data.user.id,
+              first_name: firstName,
+              last_name: lastName,
+              role: role,
+              account_status: role === 'teacher' ? 'pending' : 'active'
+            });
+          if (profileError) throw profileError;
+        }
+        onAuthSuccess(data.user);
+      }
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
+        <h2 className="text-3xl font-bold text-slate-900 mb-2 text-center">
+          {isLogin ? 'تسجيل الدخول' : 'إنشاء حساب جديد'}
+        </h2>
+        <p className="text-slate-500 text-center mb-8">
+          {isLogin ? 'مرحباً بك مجدداً في علّمني' : 'انضم إلى مجتمعنا التعليمي'}
+        </p>
+
+        {!isLogin && (
+          <div className="flex gap-2 mb-6 p-1 bg-slate-100 rounded-xl">
+            <button 
+              onClick={() => setRole('student')}
+              className={`flex-1 py-2 rounded-lg font-medium transition-all ${role === 'student' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500'}`}
+            >
+              طالب
+            </button>
+            <button 
+              onClick={() => setRole('teacher')}
+              className={`flex-1 py-2 rounded-lg font-medium transition-all ${role === 'teacher' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500'}`}
+            >
+              أستاذ
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          {!isLogin && (
+            <div className="grid grid-cols-2 gap-4">
+              <input 
+                type="text" 
+                placeholder="الاسم الأول" 
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+              />
+              <input 
+                type="text" 
+                placeholder="اللقب" 
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
+            </div>
+          )}
+          <input 
+            type="email" 
+            placeholder="البريد الإلكتروني" 
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input 
+            type="password" 
+            placeholder="كلمة المرور" 
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'جاري التحميل...' : (isLogin ? 'دخول' : 'تسجيل')}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center">
+          <button 
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-emerald-600 font-medium hover:underline"
+          >
+            {isLogin ? 'ليس لديك حساب؟ سجل الآن' : 'لديك حساب بالفعل؟ سجل دخولك'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Navbar = ({ profile }: { profile: UserProfile | null }) => {
+  return (
+    <nav className="fixed top-0 left-0 right-0 bg-white border-b border-slate-100 z-40 px-4 py-3 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+          <BookOpen className="text-emerald-600 w-6 h-6" />
+        </div>
+        <span className="text-xl font-bold text-slate-900">علّمني</span>
+      </div>
+      
+      <div className="flex items-center gap-4">
+        <button className="p-2 text-slate-500 hover:bg-slate-50 rounded-full relative">
+          <Bell className="w-6 h-6" />
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+        </button>
+        <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border-2 border-emerald-500">
+          <img 
+            src={profile?.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.auth_id}`} 
+            alt="Profile" 
+            className="w-full h-full object-cover"
+          />
+        </div>
+      </div>
+    </nav>
+  );
+};
+
+const BottomNav = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) => {
+  const tabs = [
+    { id: 'home', icon: Home, label: 'الرئيسية' },
+    { id: 'live', icon: Video, label: 'مباشر' },
+    { id: 'messages', icon: MessageSquare, label: 'رسائل' },
+    { id: 'files', icon: FileText, label: 'ملفات' },
+    { id: 'profile', icon: User, label: 'حسابي' },
+  ];
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-3 flex items-center justify-between z-40">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          className={`flex flex-col items-center gap-1 transition-colors ${activeTab === tab.id ? 'text-emerald-600' : 'text-slate-400'}`}
+        >
+          <tab.icon className={`w-6 h-6 ${activeTab === tab.id ? 'fill-emerald-600/10' : ''}`} />
+          <span className="text-[10px] font-medium">{tab.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// --- Main App ---
+
+export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState('home');
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<any[]>([]);
+  const [liveClasses, setLiveClasses] = useState<any[]>([]);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        await fetchProfile(session.user.id);
+        await fetchData();
+      } else {
+        setLoading(false);
+      }
+    };
+    checkUser();
+  }, []);
+
+  const fetchData = async () => {
+    // Fetch Posts
+    const { data: postsData } = await supabase
+      .from('posts')
+      .select('*, author:users(*)')
+      .order('created_at', { ascending: false });
+    if (postsData) setPosts(postsData);
+
+    // Fetch Live Classes
+    const { data: liveData } = await supabase
+      .from('live_classes')
+      .select('*')
+      .eq('status', 'live');
+    if (liveData) setLiveClasses(liveData);
+  };
+
+  const fetchProfile = async (authId: string) => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('auth_id', authId)
+      .single();
+    
+    if (data) setProfile(data);
+    setLoading(false);
+  };
+
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  if (!user) {
+    return <AuthScreen onAuthSuccess={(u) => {
+      setUser(u);
+      fetchProfile(u.id);
+    }} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 pt-16" dir="rtl">
+      <Navbar profile={profile} />
+      
+      {showAdmin && profile?.role === 'admin' ? (
+        <div className="max-w-4xl mx-auto p-4 space-y-8">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-slate-900">لوحة التحكم</h1>
+            <button onClick={() => setShowAdmin(false)} className="text-emerald-600 font-bold">العودة للتطبيق</button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-500 text-sm mb-1">إجمالي الطلاب</p>
+              <h3 className="text-2xl font-bold text-slate-900">1,240</h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-500 text-sm mb-1">إجمالي الأساتذة</p>
+              <h3 className="text-2xl font-bold text-slate-900">85</h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-500 text-sm mb-1">طلبات معلقة</p>
+              <h3 className="text-2xl font-bold text-red-600">12</h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-500 text-sm mb-1">الزيارات اليومية</p>
+              <h3 className="text-2xl font-bold text-emerald-600">3,500</h3>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">طلبات انضمام الأساتذة</h3>
+              <button className="text-emerald-600 text-sm font-bold">عرض الكل</button>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=admin${i}`} alt="User" className="w-10 h-10 rounded-full bg-slate-100" />
+                    <div>
+                      <h4 className="font-bold text-slate-900">أ. كمال بن يوسف</h4>
+                      <p className="text-xs text-slate-500">مادة العلوم الطبيعية</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold">قبول</button>
+                    <button className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-xs font-bold">رفض</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <main className="max-w-2xl mx-auto p-4">
+        <AnimatePresence mode="wait">
+          {activeTab === 'home' && (
+            <motion.div 
+              key="home"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Stories/Quick Actions */}
+              <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+                <div className="flex-shrink-0 flex flex-col items-center gap-2">
+                  <div className="w-16 h-16 rounded-full border-2 border-emerald-500 p-1">
+                    <div className="w-full h-full bg-emerald-100 rounded-full flex items-center justify-center">
+                      <Plus className="text-emerald-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium">إضافة</span>
+                </div>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex-shrink-0 flex flex-col items-center gap-2">
+                    <div className="w-16 h-16 rounded-full border-2 border-slate-200 p-1">
+                      <img 
+                        src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`} 
+                        alt="User" 
+                        className="w-full h-full rounded-full bg-slate-100"
+                      />
+                    </div>
+                    <span className="text-xs font-medium">أستاذ {i}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Feed Posts */}
+              {posts.length > 0 ? posts.map((post) => (
+                <div key={post.id} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={post.author?.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`} 
+                        alt="Author" 
+                        className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200"
+                      />
+                      <div>
+                        <h4 className="font-bold text-slate-900">{post.author?.first_name} {post.author?.last_name}</h4>
+                        <p className="text-xs text-slate-500">{new Date(post.created_at).toLocaleDateString('ar-EG')} • منشور</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="px-4 pb-4">
+                    <p className="text-slate-700 leading-relaxed mb-4">{post.content}</p>
+                    {post.image_url && (
+                      <img 
+                        src={post.image_url} 
+                        alt="Post content" 
+                        className="w-full h-64 object-cover rounded-2xl mb-4"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    
+                    <div className="flex items-center gap-6 pt-2 border-t border-slate-50">
+                      <button className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 transition-colors">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="text-sm font-medium">إعجاب</span>
+                      </button>
+                      <button className="flex items-center gap-2 text-slate-500 hover:text-emerald-600 transition-colors">
+                        <MessageSquare className="w-5 h-5" />
+                        <span className="text-sm font-medium">تعليق</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
+                  <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-500">لا توجد منشورات حالياً</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {activeTab === 'live' && (
+            <motion.div 
+              key="live"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-slate-900">الدروس المباشرة</h2>
+                <div className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 animate-pulse">
+                  <div className="w-2 h-2 bg-red-600 rounded-full"></div>
+                  مباشر الآن
+                </div>
+              </div>
+
+              {/* Live Session Card */}
+              <div className="bg-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="w-5 h-5" />
+                    <span className="text-sm font-medium">18 / 20 طالب</span>
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">مراجعة شاملة للفيزياء</h3>
+                  <p className="text-emerald-100 mb-6">الأستاذ: أحمد كمال • الوحدة الثانية</p>
+                  <button className="bg-white text-emerald-600 px-8 py-3 rounded-xl font-bold hover:bg-emerald-50 transition-colors">
+                    انضم الآن
+                  </button>
+                </div>
+                <Video className="absolute -bottom-4 -right-4 w-32 h-32 text-white/10 rotate-12" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-900 mt-8">الدروس القادمة</h3>
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 flex items-center gap-4">
+                  <div className="w-16 h-16 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-slate-500">
+                    <Clock className="w-6 h-6 mb-1" />
+                    <span className="text-[10px] font-bold">18:00</span>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-900">درس اللغة الإنجليزية</h4>
+                    <p className="text-xs text-slate-500">اليوم • الأستاذة سارة</p>
+                  </div>
+                  <button className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl">
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </div>
+              ))}
+            </motion.div>
+          )}
+
+          {activeTab === 'messages' && (
+            <motion.div 
+              key="messages"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-4"
+            >
+              <h2 className="text-2xl font-bold text-slate-900 mb-6">الرسائل</h2>
+              {[1, 2, 3, 4].map((i) => (
+                <button key={i} className="w-full bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                  <div className="relative">
+                    <img 
+                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=user${i}`} 
+                      alt="User" 
+                      className="w-14 h-14 rounded-full bg-slate-100"
+                    />
+                    <div className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
+                  </div>
+                  <div className="flex-1 text-right">
+                    <div className="flex justify-between items-center mb-1">
+                      <h4 className="font-bold text-slate-900">أحمد محمود</h4>
+                      <span className="text-[10px] text-slate-400">12:45 م</span>
+                    </div>
+                    <p className="text-sm text-slate-500 truncate">شكراً جزيلاً يا أستاذ على الشرح الرائع...</p>
+                  </div>
+                </button>
+              ))}
+            </motion.div>
+          )}
+
+          {activeTab === 'files' && (
+            <motion.div 
+              key="files"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-slate-900">الملفات والمواد</h2>
+                <button className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
+                  <Search className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {['الرياضيات', 'الفيزياء', 'العلوم', 'الأدب'].map((subject) => (
+                  <div key={subject} className="bg-white p-6 rounded-3xl border border-slate-100 text-center hover:shadow-md transition-shadow cursor-pointer">
+                    <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <FileText className="text-emerald-600 w-6 h-6" />
+                    </div>
+                    <h4 className="font-bold text-slate-900 mb-1">{subject}</h4>
+                    <p className="text-xs text-slate-500">24 ملف متاح</p>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-900 mt-8">آخر الملفات المضافة</h3>
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center text-red-500">
+                    <span className="font-bold text-xs">PDF</span>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-900 text-sm">ملخص الوحدة الأولى - {i}</h4>
+                    <p className="text-[10px] text-slate-500">2.4 MB • بصيغة PDF</p>
+                  </div>
+                  <button className="p-2 text-slate-400 hover:text-emerald-600">
+                    <Plus className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </motion.div>
+          )}
+          {activeTab === 'profile' && (
+            <motion.div 
+              key="profile"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100">
+                <div className="relative inline-block mb-4">
+                  <img 
+                    src={profile?.profile_image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.auth_id}`} 
+                    alt="Profile" 
+                    className="w-32 h-32 rounded-full border-4 border-emerald-500 p-1"
+                  />
+                  <button className="absolute bottom-0 right-0 bg-emerald-600 text-white p-2 rounded-full shadow-lg">
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900">{profile?.first_name} {profile?.last_name}</h2>
+                <p className="text-slate-500 mb-6">{profile?.role === 'student' ? 'طالب' : 'أستاذ'}</p>
+                
+                <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-6">
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">12</p>
+                    <p className="text-xs text-slate-500">مواد</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">45</p>
+                    <p className="text-xs text-slate-500">ملفات</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">8</p>
+                    <p className="text-xs text-slate-500">مباشر</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button className="w-full bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between text-slate-700 hover:bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="w-5 h-5 text-emerald-600" />
+                    <span className="font-medium">المواد المشترك بها</span>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                </button>
+                <button className="w-full bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between text-slate-700 hover:bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-emerald-600" />
+                    <span className="font-medium">ملفاتي المحملة</span>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                </button>
+                {profile?.role === 'admin' && (
+                  <button 
+                    onClick={() => setShowAdmin(true)}
+                    className="w-full bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between text-white hover:bg-slate-800"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Users className="w-5 h-5 text-emerald-400" />
+                      <span className="font-medium">لوحة تحكم المدير</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-500" />
+                  </button>
+                )}
+                <button 
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setUser(null);
+                    setProfile(null);
+                  }}
+                  className="w-full bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center justify-between text-red-600 hover:bg-red-100 mt-8"
+                >
+                  <div className="flex items-center gap-3">
+                    <LogOut className="w-5 h-5" />
+                    <span className="font-bold">تسجيل الخروج</span>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+      )}
+
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+    </div>
+  );
+}

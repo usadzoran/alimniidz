@@ -1,0 +1,8 @@
+{
+  "name": "علّمني",
+  "description": "منصة تعليمية متكاملة للطلاب والأساتذة تتيح الدروس المباشرة، تبادل الملفات، والتواصل الفعال باستخدام Supabase.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
