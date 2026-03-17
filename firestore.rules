@@ -1,21 +1,86 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: userId
+// Fields:
+//   - auth_id: string (required)
+//   - first_name: string
+//   - last_name: string
+//   - email: string (required, email format)
+//   - role: string (required, enum: ["student", "teacher", "admin"])
+//   - account_status: string (enum: ["pending", "approved", "rejected"])
+//   - profile_image: string
+//   - created_at: timestamp
+//
+// Collection: posts
+// Document ID: postId
+// Fields:
+//   - author_id: string (required)
+//   - author_name: string
+//   - author_image: string
+//   - content: string (required)
+//   - image_url: string
+//   - likes_count: number
+//   - comments_count: number
+//   - created_at: timestamp
+//
+// Collection: live_classes
+// Document ID: classId
+// Fields:
+//   - title: string (required)
+//   - teacher_id: string (required)
+//   - subject: string
+//   - start_time: timestamp
+//   - status: string (required, enum: ["upcoming", "live", "ended"])
+//   - max_students: number
+//   - current_students: number
+//
+// Collection: lesson_files
+// Document ID: fileId
+// Fields:
+//   - title: string (required)
+//   - subject: string
+//   - file_url: string (required)
+//   - uploaded_by: string
+//   - created_at: timestamp
+//
+// Collection: explain_videos
+// Document ID: videoId
+// Fields:
+//   - title: string (required)
+//   - subject: string
+//   - video_url: string (required)
+//   - thumbnail_url: string
+//   - created_at: timestamp
+//
+// Collection: messages
+// Document ID: messageId
+// Fields:
+//   - sender_id: string (required)
+//   - receiver_id: string (required)
+//   - content: string (required)
+//   - created_at: timestamp
+//
+// Collection: subscriptions
+// Document ID: subId
+// Fields:
+//   - user_id: string (required)
+//   - plan: string (required)
+//   - status: string
+//   - expires_at: timestamp
+//
+// ===============================================================
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    // Collection: users
-    // Fields: auth_id, first_name, last_name, role, account_status, profile_image, bio, rating, created_at
-    //
-    // Collection: posts
-    // Fields: author_id, content, image_url, video_url, likes_count, comments_count, created_at
-    //
-    // Collection: messages
-    // Fields: sender_id, receiver_id, content, is_read, created_at
+    // Helper Functions
     // ===============================================================
 
-    // Helper Functions
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -27,88 +92,96 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "wahablila31000@gmail.com" && request.auth.token.email_verified == true));
+         (request.auth.token.email == "wahablila31000@gmail.com" && request.auth.token.email_verified == true));
     }
+
+    function isTeacher() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    function isApproved() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.account_status == 'approved';
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
 
     function isValidUser(data) {
-      return data.keys().hasAll(['auth_id', 'first_name', 'last_name', 'role', 'account_status', 'created_at']) &&
-             data.first_name is string && data.first_name.size() < 50 &&
-             data.last_name is string && data.last_name.size() < 50 &&
+      return data.email is string && isValidEmail(data.email) &&
              data.role in ['student', 'teacher', 'admin'] &&
-             data.account_status in ['active', 'pending', 'suspended'];
+             data.keys().hasAll(['auth_id', 'email', 'role']);
     }
 
-    // Users
+    function isValidPost(data) {
+      return data.author_id is string && data.content is string && data.content.size() > 0 && data.content.size() < 5000;
+    }
+
+    function isValidLiveClass(data) {
+      return data.title is string && data.title.size() > 0 && data.teacher_id is string && data.status in ['upcoming', 'live', 'ended'];
+    }
+
+    function isValidMessage(data) {
+      return data.sender_id is string && data.receiver_id is string && data.content is string && data.content.size() > 0;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
-                      (request.resource.data.role != 'admin' || isAdmin());
-      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) &&
-                      (request.resource.data.role == resource.data.role || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow delete: if isAdmin();
     }
 
-    // Posts
     match /posts/{postId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.author_id == request.auth.uid;
-      allow update, delete: if isAuthenticated() && (resource.data.author_id == request.auth.uid || isAdmin());
-      
-      match /comments/{commentId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && request.resource.data.author_id == request.auth.uid;
-        allow update, delete: if isAuthenticated() && (resource.data.author_id == request.auth.uid || isAdmin());
-      }
+      allow create: if isAuthenticated() && (isTeacher() || isAdmin()) && isValidPost(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.author_id || isAdmin()) && isValidPost(request.resource.data);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.author_id || isAdmin());
     }
 
-    // Live Classes
     match /live_classes/{classId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (request.resource.data.teacher_id == request.auth.uid || isAdmin());
-      allow update, delete: if isAuthenticated() && (resource.data.teacher_id == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (isTeacher() || isAdmin()) && isValidLiveClass(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.teacher_id || isAdmin()) && isValidLiveClass(request.resource.data);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.teacher_id || isAdmin());
     }
 
-    // Messages
-    match /messages/{messageId} {
-      allow read: if isAuthenticated() && (resource.data.sender_id == request.auth.uid || resource.data.receiver_id == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.sender_id == request.auth.uid;
-      allow update: if isAuthenticated() && resource.data.receiver_id == request.auth.uid && 
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
-    }
-
-    // Lesson Files
     match /lesson_files/{fileId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (request.resource.data.teacher_id == request.auth.uid || isAdmin());
-      allow update, delete: if isAuthenticated() && (resource.data.teacher_id == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (isTeacher() || isAdmin());
+      allow update, delete: if isAuthenticated() && (request.auth.uid == resource.data.uploaded_by || isAdmin());
     }
 
-    // Explain Videos
     match /explain_videos/{videoId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (request.resource.data.teacher_id == request.auth.uid || isAdmin());
-      allow update, delete: if isAuthenticated() && (resource.data.teacher_id == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
 
-    // Subscriptions
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.sender_id || request.auth.uid == resource.data.receiver_id);
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.sender_id && isValidMessage(request.resource.data);
+      allow update, delete: if false; // Messages are immutable for now
+    }
+
     match /subscriptions/{subId} {
-      allow read: if isAuthenticated() && (resource.data.student_id == request.auth.uid || resource.data.teacher_id == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.student_id == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
-    // Notifications
-    match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
-      allow create: if isAdmin();
-      allow update: if isAuthenticated() && resource.data.user_id == request.auth.uid && 
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
-      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
-    }
-
-    // Activity Logs
-    match /activity_logs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_id || isAdmin());
+      allow create, update, delete: if isAdmin();
     }
   }
 }
