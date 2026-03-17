@@ -96,6 +96,15 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAdmin();
+      allow update: if isAuthenticated() && resource.data.user_id == request.auth.uid && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
+      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+    }
+
     // Activity Logs
     match /activity_logs/{logId} {
       allow read: if isAdmin();

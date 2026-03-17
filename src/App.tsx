@@ -472,7 +472,7 @@ function AppContent() {
     };
     const errorMsg = JSON.stringify(errInfo);
     console.error('Firestore Error: ', errorMsg);
-    setFirebaseError(`خطأ في قاعدة البيانات (${operationType}): ${errInfo.error}`);
+    setFirebaseError(`خطأ في قاعدة البيانات (${operationType}) في ${path || 'غير معروف'}: ${errInfo.error}`);
     throw new Error(errorMsg);
   };
 
