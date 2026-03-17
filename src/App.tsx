@@ -57,7 +57,8 @@ import {
   where,
   updateDoc,
   getDocs,
-  getDocFromServer
+  getDocFromServer,
+  limit
 } from 'firebase/firestore';
 
 // --- Types ---
@@ -180,6 +181,22 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
 
+  const logActivity = async (action: string, details: string, userProfile?: UserProfile | null) => {
+    const currentProfile = userProfile || profile;
+    if (!currentProfile) return;
+    try {
+      await addDoc(collection(db, 'activity_logs'), {
+        user_id: currentProfile.auth_id,
+        user_name: `${currentProfile.first_name} ${currentProfile.last_name}`,
+        action,
+        details,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Error logging activity:", error);
+    }
+  };
+
   // Auth & Profile
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
@@ -189,7 +206,9 @@ export default function App() {
         try {
           const profileDoc = await getDoc(doc(db, 'users', authUser.uid));
           if (profileDoc.exists()) {
-            setProfile({ id: profileDoc.id, ...profileDoc.data() } as UserProfile);
+            const p = { id: profileDoc.id, ...profileDoc.data() } as UserProfile;
+            setProfile(p);
+            logActivity('سجل دخول', 'من المتصفح', p);
           } else {
             console.warn("No profile found for user:", authUser.uid);
           }
@@ -251,9 +270,9 @@ export default function App() {
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50 font-sans text-right" dir="rtl">
         {profile?.role === 'admin' ? (
-          <AdminArea profile={profile} adminTab={adminTab} setAdminTab={setAdminTab} />
+          <AdminArea profile={profile} adminTab={adminTab} setAdminTab={setAdminTab} logActivity={logActivity} />
         ) : (
-          <MainApp profile={profile} activeTab={activeTab} setActiveTab={setActiveTab} />
+          <MainApp profile={profile} activeTab={activeTab} setActiveTab={setActiveTab} logActivity={logActivity} />
         )}
       </div>
     </ErrorBoundary>
@@ -425,7 +444,7 @@ function PublicArea() {
 
 // --- Main App (Student & Teacher) ---
 
-function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | null, activeTab: string, setActiveTab: (t: string) => void }) {
+function MainApp({ profile, activeTab, setActiveTab, logActivity }: { profile: UserProfile | null, activeTab: string, setActiveTab: (t: string) => void, logActivity: (a: string, d: string) => void }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [liveClasses, setLiveClasses] = useState<LiveClass[]>([]);
   const [lessonFiles, setLessonFiles] = useState<LessonFile[]>([]);
@@ -498,6 +517,7 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
       await updateDoc(postRef, {
         likes_count: (post.likes_count || 0) + 1
       });
+      logActivity('أعجب بمنشور', `منشور: ${post.content.substring(0, 20)}...`);
     }
   };
 
@@ -512,8 +532,41 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
       comments_count: 0,
       created_at: serverTimestamp()
     });
+    logActivity('أنشأ منشوراً', postContent.substring(0, 30));
     setPostContent('');
     setIsPostModalOpen(false);
+  };
+
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadSubject, setUploadSubject] = useState('');
+  const [uploadType, setUploadType] = useState<'file' | 'video'>('file');
+
+  const handleUpload = async () => {
+    if (!uploadTitle || !uploadSubject || !profile) return;
+    
+    if (uploadType === 'file') {
+      await addDoc(collection(db, 'lesson_files'), {
+        title: uploadTitle,
+        subject: uploadSubject,
+        file_url: 'https://example.com/demo-file.pdf', // In a real app, this would be from Firebase Storage
+        uploaded_by: profile.auth_id,
+        created_at: serverTimestamp()
+      });
+      logActivity('رفع ملفاً تعليمياً', `${uploadTitle} (${uploadSubject})`);
+    } else {
+      await addDoc(collection(db, 'explain_videos'), {
+        title: uploadTitle,
+        subject: uploadSubject,
+        video_url: 'https://example.com/demo-video.mp4',
+        thumbnail_url: `https://picsum.photos/seed/${Math.random()}/400/300`,
+        created_at: serverTimestamp()
+      });
+      logActivity('رفع فيديو توضيحي', `${uploadTitle} (${uploadSubject})`);
+    }
+    
+    setUploadTitle('');
+    setUploadSubject('');
+    setIsUploadModalOpen(false);
   };
 
   const handleCreateLive = async () => {
@@ -527,6 +580,7 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
       max_students: 50,
       current_students: 0
     });
+    logActivity('جدول حصة مباشرة', `${liveTitle} (${liveSubject})`);
     setLiveTitle('');
     setLiveSubject('');
     setIsLiveModalOpen(false);
@@ -542,6 +596,7 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
       content: newMessage,
       created_at: serverTimestamp()
     });
+    logActivity('أرسل رسالة', `إلى ${selectedUserForChat.first_name}`);
     setNewMessage('');
   };
 
@@ -829,15 +884,18 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
 
               {/* Subjects Grid */}
               <div className="grid grid-cols-2 gap-4">
-                {['الرياضيات', 'الفيزياء', 'العلوم', 'الأدب'].map((subject) => (
-                  <div key={subject} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center hover:shadow-xl hover:shadow-emerald-100/20 transition-all cursor-pointer group">
-                    <div className="w-16 h-16 bg-emerald-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:bg-emerald-600 transition-all duration-500">
-                      <FileText className="text-emerald-600 w-8 h-8 group-hover:text-white transition-colors" />
+                {['الرياضيات', 'الفيزياء', 'العلوم', 'الأدب'].map((subject) => {
+                  const subjectFiles = lessonFiles.filter(f => f.subject === subject).length;
+                  return (
+                    <div key={subject} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center hover:shadow-xl hover:shadow-emerald-100/20 transition-all cursor-pointer group">
+                      <div className="w-16 h-16 bg-emerald-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:bg-emerald-600 transition-all duration-500">
+                        <FileText className="text-emerald-600 w-8 h-8 group-hover:text-white transition-colors" />
+                      </div>
+                      <h4 className="font-black text-slate-900 text-lg mb-1">{subject}</h4>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{subjectFiles} ملف متاح</p>
                     </div>
-                    <h4 className="font-black text-slate-900 text-lg mb-1">{subject}</h4>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">24 ملف متاح</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Videos Section */}
@@ -920,8 +978,10 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
                 
                 <div className="grid grid-cols-3 gap-6 border-t border-slate-50 pt-8">
                   <div>
-                    <p className="text-2xl font-black text-slate-900">12</p>
-                    <p className="text-xs text-slate-400 font-bold uppercase mt-1">دروس</p>
+                    <p className="text-2xl font-black text-slate-900">
+                      {profile?.role === 'teacher' ? lessonFiles.filter(f => f.uploaded_by === profile.auth_id).length : posts.filter(p => p.author_id === profile?.auth_id).length}
+                    </p>
+                    <p className="text-xs text-slate-400 font-bold uppercase mt-1">{profile?.role === 'teacher' ? 'ملفات' : 'منشورات'}</p>
                   </div>
                   <div className="border-x border-slate-50">
                     <p className="text-2xl font-black text-slate-900">450</p>
@@ -1114,6 +1174,41 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
               </div>
               
               <div className="space-y-6">
+                <div className="space-y-4">
+                  <input 
+                    type="text"
+                    value={uploadTitle}
+                    onChange={(e) => setUploadTitle(e.target.value)}
+                    placeholder="عنوان المحتوى"
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-700 font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                  <select 
+                    value={uploadSubject}
+                    onChange={(e) => setUploadSubject(e.target.value)}
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-slate-700 font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                  >
+                    <option value="">اختر المادة</option>
+                    <option value="الرياضيات">الرياضيات</option>
+                    <option value="الفيزياء">الفيزياء</option>
+                    <option value="العلوم">العلوم</option>
+                    <option value="الأدب">الأدب</option>
+                  </select>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => setUploadType('file')}
+                      className={`flex-1 py-3 rounded-xl font-bold transition-all ${uploadType === 'file' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                    >
+                      ملف PDF
+                    </button>
+                    <button 
+                      onClick={() => setUploadType('video')}
+                      className={`flex-1 py-3 rounded-xl font-bold transition-all ${uploadType === 'video' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                    >
+                      فيديو
+                    </button>
+                  </div>
+                </div>
+
                 <div className="border-4 border-dashed border-slate-100 rounded-[2rem] p-12 text-center hover:border-emerald-200 transition-colors cursor-pointer group">
                   <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-4 group-hover:bg-emerald-50 transition-colors">
                     <Plus className="w-10 h-10 text-slate-300 group-hover:text-emerald-500" />
@@ -1122,7 +1217,10 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
                   <p className="text-[10px] text-slate-300 font-black uppercase mt-2 tracking-widest">PDF, DOCX, MP4 (Max 50MB)</p>
                 </div>
                 
-                <button className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all">
+                <button 
+                  onClick={handleUpload}
+                  className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all"
+                >
                   تأكيد الرفع
                 </button>
               </div>
@@ -1293,23 +1391,30 @@ function MainApp({ profile, activeTab, setActiveTab }: { profile: UserProfile | 
 
 // --- Admin Area ---
 
-function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | null, adminTab: string, setAdminTab: (t: string) => void }) {
+function AdminArea({ profile, adminTab, setAdminTab, logActivity }: { profile: UserProfile | null, adminTab: string, setAdminTab: (t: string) => void, logActivity: (a: string, d: string) => void }) {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [liveClassesCount, setLiveClassesCount] = useState(0);
+  const [totalLogs, setTotalLogs] = useState(0);
 
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       setAllUsers(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
     });
 
-    // Simulated activity logs
-    setActivityLogs([
-      { id: '1', user_name: 'أحمد علي', action: 'سجل دخول', details: 'من جهاز آيفون', timestamp: new Date() },
-      { id: '2', user_name: 'سارة محمد', action: 'رفعت ملف', details: 'ملخص الفيزياء', timestamp: new Date() },
-      { id: '3', user_name: 'ياسين براهيمي', action: 'بدأ بث مباشر', details: 'مراجعة الرياضيات', timestamp: new Date() },
-    ]);
+    const unsubLogs = onSnapshot(query(collection(db, 'activity_logs'), orderBy('timestamp', 'desc'), limit(10)), (snap) => {
+      setActivityLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-    return () => unsubUsers();
+    const unsubTotalLogs = onSnapshot(collection(db, 'activity_logs'), (snap) => {
+      setTotalLogs(snap.size);
+    });
+
+    const unsubLive = onSnapshot(collection(db, 'live_classes'), (snap) => {
+      setLiveClassesCount(snap.docs.filter(d => d.data().status === 'live').length);
+    });
+
+    return () => { unsubUsers(); unsubLogs(); unsubTotalLogs(); unsubLive(); };
   }, []);
 
   const handleApproveTeacher = async (userId: string) => {
@@ -1317,6 +1422,8 @@ function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | 
       await updateDoc(doc(db, 'users', userId), {
         account_status: 'approved'
       });
+      const user = allUsers.find(u => u.id === userId);
+      logActivity('وافق على أستاذ', `تم قبول طلب ${user?.first_name} ${user?.last_name}`);
     } catch (error) {
       console.error("Error approving teacher:", error);
     }
@@ -1327,6 +1434,8 @@ function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | 
       await updateDoc(doc(db, 'users', userId), {
         account_status: 'rejected'
       });
+      const user = allUsers.find(u => u.id === userId);
+      logActivity('رفض أستاذ', `تم رفض طلب ${user?.first_name} ${user?.last_name}`);
     } catch (error) {
       console.error("Error rejecting teacher:", error);
     }
@@ -1334,9 +1443,12 @@ function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | 
 
   const handleFreezeAccount = async (userId: string, currentStatus: string) => {
     try {
+      const newStatus = currentStatus === 'frozen' ? 'approved' : 'frozen';
       await updateDoc(doc(db, 'users', userId), {
-        account_status: currentStatus === 'frozen' ? 'approved' : 'frozen'
+        account_status: newStatus
       });
+      const user = allUsers.find(u => u.id === userId);
+      logActivity(newStatus === 'frozen' ? 'جمد حساب' : 'ألغى تجميد حساب', `المستخدم: ${user?.first_name} ${user?.last_name}`);
     } catch (error) {
       console.error("Error freezing account:", error);
     }
@@ -1416,11 +1528,11 @@ function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | 
                 </div>
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                   <p className="text-slate-400 text-xs font-black uppercase mb-2">البث المباشر</p>
-                  <h3 className="text-4xl font-black text-slate-900">4</h3>
+                  <h3 className="text-4xl font-black text-slate-900">{liveClassesCount}</h3>
                 </div>
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                  <p className="text-slate-400 text-xs font-black uppercase mb-2">الزيارات اليومية</p>
-                  <h3 className="text-4xl font-black text-slate-900">1.2k</h3>
+                  <p className="text-slate-400 text-xs font-black uppercase mb-2">سجل النشاطات</p>
+                  <h3 className="text-4xl font-black text-slate-900">{totalLogs}</h3>
                 </div>
               </div>
 
@@ -1440,7 +1552,7 @@ function AdminArea({ profile, adminTab, setAdminTab }: { profile: UserProfile | 
                         </p>
                         <p className="text-sm text-slate-400 font-medium mt-1">{log.details}</p>
                         <p className="text-xs text-slate-300 font-black uppercase mt-2 tracking-tighter">
-                          {log.timestamp.toLocaleTimeString('ar-EG')}
+                          {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString('ar-EG') : new Date().toLocaleTimeString('ar-EG')}
                         </p>
                       </div>
                     </div>

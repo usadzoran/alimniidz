@@ -96,6 +96,19 @@
         "expires_at": { "type": "string", "format": "date-time" }
       },
       "required": ["user_id", "plan"]
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "System activity log",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "user_name": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_name", "action", "timestamp"]
     }
   },
   "firestore": {
@@ -105,6 +118,7 @@
     "/lesson_files/{fileId}": { "schema": "LessonFile", "description": "Lesson files" },
     "/explain_videos/{videoId}": { "schema": "ExplainVideo", "description": "Educational videos" },
     "/messages/{messageId}": { "schema": "Message", "description": "Private messages" },
-    "/subscriptions/{subId}": { "schema": "Subscription", "description": "User subscriptions" }
+    "/subscriptions/{subId}": { "schema": "Subscription", "description": "User subscriptions" },
+    "/activity_logs/{logId}": { "schema": "ActivityLog", "description": "System activity logs" }
   }
 }

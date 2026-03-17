@@ -183,5 +183,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_id || isAdmin());
       allow create, update, delete: if isAdmin();
     }
+
+    match /activity_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
   }
 }
