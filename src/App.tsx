@@ -6,6 +6,7 @@ import {
   Plus, 
   Image as ImageIcon, 
   MapPin, 
+  MessageSquare,
   Clock, 
   Search, 
   ArrowRight,
@@ -29,6 +30,15 @@ interface Article {
   images: string[];
   date: string;
   preview: string;
+}
+
+interface Comment {
+  id: string;
+  articleId: string;
+  userName: string;
+  text: string;
+  date: string;
+  likes: number;
 }
 
 const CATEGORIES = [
@@ -101,8 +111,10 @@ const INITIAL_ARTICLES: Article[] = [
 
 export default function App() {
   const [articles, setArticles] = useState<Article[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [activeCategory, setActiveCategory] = useState("الرئيسية");
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -113,13 +125,22 @@ export default function App() {
   const [newImages, setNewImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Comment Form State
+  const [commentName, setCommentName] = useState('');
+  const [commentText, setCommentText] = useState('');
+
   useEffect(() => {
-    const saved = localStorage.getItem('voyagea_articles');
-    if (saved) {
-      setArticles(JSON.parse(saved));
+    const savedArticles = localStorage.getItem('voyagea_articles');
+    if (savedArticles) {
+      setArticles(JSON.parse(savedArticles));
     } else {
       setArticles(INITIAL_ARTICLES);
       localStorage.setItem('voyagea_articles', JSON.stringify(INITIAL_ARTICLES));
+    }
+
+    const savedComments = localStorage.getItem('voyagea_comments');
+    if (savedComments) {
+      setComments(JSON.parse(savedComments));
     }
 
     const handleScroll = () => {
@@ -132,6 +153,36 @@ export default function App() {
   const saveArticles = (newArticles: Article[]) => {
     setArticles(newArticles);
     localStorage.setItem('voyagea_articles', JSON.stringify(newArticles));
+  };
+
+  const saveComments = (newComments: Comment[]) => {
+    setComments(newComments);
+    localStorage.setItem('voyagea_comments', JSON.stringify(newComments));
+  };
+
+  const handleAddComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedArticle || !commentName || !commentText) return;
+
+    const newComment: Comment = {
+      id: Date.now().toString(),
+      articleId: selectedArticle.id,
+      userName: commentName,
+      text: commentText,
+      date: new Date().toLocaleDateString('ar-EG'),
+      likes: 0
+    };
+
+    saveComments([...comments, newComment]);
+    setCommentName('');
+    setCommentText('');
+  };
+
+  const handleLikeComment = (commentId: string) => {
+    const updatedComments = comments.map(c => 
+      c.id === commentId ? { ...c, likes: c.likes + 1 } : c
+    );
+    saveComments(updatedComments);
   };
 
   const handlePublish = (e: React.FormEvent) => {
@@ -296,7 +347,7 @@ export default function App() {
 
         <div className="grid md:grid-cols-3 gap-12">
           {latestArticles.map((article) => (
-            <div key={article.id} className="group cursor-pointer">
+            <div key={article.id} className="group cursor-pointer" onClick={() => setSelectedArticle(article)}>
               <div className="relative aspect-[4/5] overflow-hidden rounded-[2.5rem] mb-8 shadow-2xl">
                 <img 
                   src={article.images[0]} 
@@ -379,7 +430,7 @@ export default function App() {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
           {filteredArticles.map((article) => (
-            <div key={article.id} className="bg-white rounded-[3rem] p-5 shadow-sm border border-slate-100 group hover:shadow-2xl transition-all duration-500">
+            <div key={article.id} className="bg-white rounded-[3rem] p-5 shadow-sm border border-slate-100 group hover:shadow-2xl transition-all duration-500 cursor-pointer" onClick={() => setSelectedArticle(article)}>
               <div className="relative aspect-video overflow-hidden rounded-[2.5rem] mb-6">
                 <img 
                   src={article.images[0]} 
@@ -403,7 +454,7 @@ export default function App() {
                   {article.preview}
                 </p>
                 <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                  <button className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                  <button className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all" onClick={(e) => { e.stopPropagation(); }}>
                     <Heart className="w-6 h-6" />
                   </button>
                   <button className="text-[11px] font-black uppercase tracking-widest text-[#C5A059] flex items-center gap-2 group/btn">
@@ -475,6 +526,131 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* --- Article Detail Modal --- */}
+      {selectedArticle && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+          <div className="absolute inset-0 bg-[#1A1A1A]/95 backdrop-blur-3xl" onClick={() => setSelectedArticle(null)}></div>
+          <div className="relative bg-white w-full max-w-5xl h-full max-h-[90vh] rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col animate-modal-in">
+            {/* Modal Header */}
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-10">
+              <div className="flex items-center gap-4">
+                <span className="px-4 py-2 bg-[#C5A059] text-white text-[10px] font-black uppercase tracking-widest rounded-full">
+                  {selectedArticle.category}
+                </span>
+                <span className="text-slate-400 text-xs font-bold flex items-center gap-2">
+                  <Clock className="w-4 h-4" /> {selectedArticle.date}
+                </span>
+              </div>
+              <button onClick={() => setSelectedArticle(null)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 md:p-12">
+              <h2 className="text-4xl md:text-5xl font-black text-[#1A1A1A] mb-8 tracking-tighter leading-tight">
+                {selectedArticle.title}
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+                {selectedArticle.images.map((img, idx) => (
+                  <img 
+                    key={idx}
+                    src={img} 
+                    className="w-full aspect-video object-cover rounded-[2.5rem] shadow-lg"
+                    alt={`${selectedArticle.title} ${idx + 1}`}
+                  />
+                ))}
+              </div>
+
+              <div className="prose prose-lg max-w-none mb-16">
+                <p className="text-slate-600 text-xl font-medium leading-relaxed whitespace-pre-wrap">
+                  {selectedArticle.content}
+                </p>
+              </div>
+
+              {/* Comments Section */}
+              <div className="border-t border-slate-100 pt-16">
+                <h3 className="text-3xl font-black text-[#1A1A1A] mb-10 tracking-tighter flex items-center gap-4">
+                  <MessageSquare className="w-8 h-8 text-[#C5A059]" /> التعليقات
+                </h3>
+
+                {/* Comment Form */}
+                <form onSubmit={handleAddComment} className="bg-slate-50 p-8 rounded-[2.5rem] mb-12">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 mr-4">الاسم</label>
+                      <input 
+                        type="text" 
+                        value={commentName}
+                        onChange={(e) => setCommentName(e.target.value)}
+                        placeholder="اسمك المستعار"
+                        className="w-full bg-white border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-[#C5A059] outline-none transition-all"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="mb-6">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 mr-4">تعليقك</label>
+                    <textarea 
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      placeholder="ما رأيك في هذه الوجهة؟"
+                      rows={4}
+                      className="w-full bg-white border-none rounded-[2rem] px-6 py-5 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-[#C5A059] outline-none transition-all resize-none"
+                      required
+                    ></textarea>
+                  </div>
+                  <button 
+                    type="submit"
+                    className="px-10 py-4 bg-[#1A1A1A] text-white rounded-full font-black uppercase tracking-widest text-xs hover:bg-[#C5A059] transition-all shadow-xl"
+                  >
+                    إرسال التعليق
+                  </button>
+                </form>
+
+                {/* Comment List */}
+                <div className="space-y-8">
+                  {comments.filter(c => c.articleId === selectedArticle.id).length > 0 ? (
+                    comments.filter(c => c.articleId === selectedArticle.id).map((comment) => (
+                      <div key={comment.id} className="flex gap-6 group">
+                        <div className="w-14 h-14 rounded-2xl bg-[#F5F2ED] flex items-center justify-center text-[#C5A059] font-black text-xl flex-shrink-0">
+                          {comment.userName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <h5 className="font-black text-[#1A1A1A]">{comment.userName}</h5>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{comment.date}</span>
+                          </div>
+                          <p className="text-slate-600 font-medium leading-relaxed mb-4">
+                            {comment.text}
+                          </p>
+                          <div className="flex items-center gap-6">
+                            <button 
+                              onClick={() => handleLikeComment(comment.id)}
+                              className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <Heart className={`w-4 h-4 ${comment.likes > 0 ? 'fill-red-500 text-red-500' : ''}`} /> {comment.likes} إعجاب
+                            </button>
+                            <button className="text-xs font-bold text-slate-400 hover:text-[#C5A059] transition-colors">
+                              رد
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 bg-slate-50 rounded-[2.5rem]">
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">لا توجد تعليقات بعد. كن أول من يعلق!</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Admin Modal --- */}
       {isAdminOpen && (
